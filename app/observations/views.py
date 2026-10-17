@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 
@@ -36,12 +37,36 @@ class SafetyAssistantUnavailable(APIException):
 
 def _run_response_agent(observation_id):
     try:
-        run_landslide_response_agent(observation_id)
+        result = run_landslide_response_agent(observation_id)
     except ResponseAgentError:
         logger.exception(
             'Response AI agent failed for observation %s.',
             observation_id,
         )
+        return
+    except Exception:
+        logger.exception(
+            'Unexpected response AI agent error for observation %s.',
+            observation_id,
+        )
+        return
+
+    print(
+        'Landslide response agent result:\n'
+        + json.dumps(
+            {
+                'observation_id': observation_id,
+                'status': result.get('status'),
+                'rag_retrieval': result.get('safety_result'),
+                'emergency_contact': result.get('emergency_contact'),
+                'email_status': result.get('email_result', {}).get('status'),
+                'reason': result.get('reason'),
+            },
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
+    )
 
 
 def _start_response_agent(observation_id):

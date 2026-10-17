@@ -65,11 +65,12 @@ exactly one message sent; SMTP errors and unsuccessful send counts are reported
 as `failed`, while absent/invalid contact email is reported as skipped. No
 email, SMS, or public alert is sent for a `No` prediction.
 
-The agent prints and returns results in the Django server process; they are not
-included in the public API response. Agent failures are logged by Django and do
-not undo the saved prediction. This process-local background execution is
-intended for this learning prototype; use a durable task queue for production
-deployments where tasks must survive server restarts.
+The agent prints its result in the Django server process, including the
+retrieved safety answer and source passages, contact details, and email status;
+results are not included in the public API response. Agent failures are logged
+by Django and do not undo the saved prediction. This process-local background
+execution is intended for this learning prototype; use a durable task queue
+for production deployments where tasks must survive server restarts.
 
 Install/start Ollama and fetch the configured model before using the agent:
 
