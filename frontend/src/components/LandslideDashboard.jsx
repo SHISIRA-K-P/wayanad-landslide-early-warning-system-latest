@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import './LandslideDashboard.css'
 
 const API_BASE_URL = (
@@ -20,6 +20,7 @@ const INITIAL_FORM = {
 function getErrorMessage(data) {
   if (typeof data === 'string') return data
   if (data && typeof data === 'object') {
+    if (typeof data.detail === 'string') return data.detail
     return Object.entries(data)
       .map(([field, messages]) => {
         const text = Array.isArray(messages) ? messages.join(' ') : String(messages)
@@ -50,42 +51,21 @@ async function fetchObservations() {
 function LandslideDashboard() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [observations, setObservations] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const [predictionError, setPredictionError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [page, setPage] = useState('new')
   const [editingId, setEditingId] = useState(null)
+  const [predictionResult, setPredictionResult] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [safetyQuestion, setSafetyQuestion] = useState('')
   const [safetyAnswer, setSafetyAnswer] = useState(null)
   const [safetyError, setSafetyError] = useState('')
   const [safetyLoading, setSafetyLoading] = useState(false)
-
-  useEffect(() => {
-    let active = true
-
-    fetchObservations()
-      .then((data) => {
-        if (active) {
-          setObservations(data)
-          setLoadError('')
-        }
-      })
-      .catch((error) => {
-        if (active) {
-          setLoadError(error.message || 'Could not connect to the observations API.')
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [])
+  const submissionInFlight = useRef(false)
 
   const loadObservations = useCallback(async () => {
     try {
@@ -107,11 +87,17 @@ function LandslideDashboard() {
   function handleChange(event) {
     const { name, value } = event.target
     setForm((currentForm) => ({ ...currentForm, [name]: value }))
+    setPredictionResult(null)
+    setPredictionError('')
+    setSuccessMessage('')
   }
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (submissionInFlight.current) return
+    submissionInFlight.current = true
     setSubmitError('')
+    setPredictionError('')
     setSuccessMessage('')
     setSubmitting(true)
 
@@ -137,19 +123,41 @@ function LandslideDashboard() {
       const responseData = await response.json().catch(() => null)
 
       if (!response.ok) {
-        throw new Error(getErrorMessage(responseData))
+        const error = new Error(getErrorMessage(responseData))
+        error.status = response.status
+        error.code = responseData?.code
+        throw error
       }
 
+      setPredictionResult(responseData)
       setForm(INITIAL_FORM)
       setEditingId(null)
-      setSuccessMessage(
-        `Observation #${responseData.id} saved. Model prediction: ${responseData.landslide_prediction}; landslide probability: ${(responseData.landslide_probability * 100).toFixed(1)}%.`,
+      setSuccessMessage(`Observation #${responseData.id} saved successfully.`)
+      setObservations((current) =>
+        editingId
+          ? current.map((observation) =>
+              observation.id === responseData.id ? responseData : observation,
+            )
+          : [
+              responseData,
+              ...current.filter((observation) => observation.id !== responseData.id),
+            ],
       )
-      setPage('records')
-      await loadObservations()
+      if (responseData.landslide_prediction == null) {
+        setPredictionError(
+          `Observation #${responseData.id} was saved, but the API did not return a prediction.`,
+        )
+      }
     } catch (error) {
-      setSubmitError(error.message || 'Could not save the observation.')
+      if (error.code === 'prediction_model_unavailable' || error.status === 503) {
+        setPredictionError(
+          `Prediction failed before the observation could be saved: ${error.message}`,
+        )
+      } else {
+        setSubmitError(`Could not save the observation: ${error.message}`)
+      }
     } finally {
+      submissionInFlight.current = false
       setSubmitting(false)
     }
   }
@@ -166,7 +174,9 @@ function LandslideDashboard() {
     })
     setEditingId(observation.id)
     setSubmitError('')
+    setPredictionError('')
     setSuccessMessage('')
+    setPredictionResult(null)
     setPage('new')
   }
 
@@ -174,7 +184,24 @@ function LandslideDashboard() {
     setForm(INITIAL_FORM)
     setEditingId(null)
     setSubmitError('')
+    setPredictionError('')
     setSuccessMessage('')
+    setPredictionResult(null)
+    setPage('new')
+  }
+
+  function returnToObservationForm() {
+    if (page === 'records') {
+      setForm(INITIAL_FORM)
+      setEditingId(null)
+      setSubmitError('')
+      setPredictionError('')
+      setSuccessMessage('')
+      setPredictionResult(null)
+      setSafetyQuestion('')
+      setSafetyAnswer(null)
+      setSafetyError('')
+    }
     setPage('new')
   }
 
@@ -249,7 +276,7 @@ function LandslideDashboard() {
         <button
           className={page === 'new' ? 'page-nav-button active' : 'page-nav-button'}
           type="button"
-          onClick={startNewObservation}
+          onClick={returnToObservationForm}
         >
           New observation
         </button>
@@ -262,7 +289,7 @@ function LandslideDashboard() {
             refreshObservations()
           }}
         >
-          All records
+          All Records
         </button>
         <button
           className={page === 'safety' ? 'page-nav-button active' : 'page-nav-button'}
@@ -327,16 +354,17 @@ function LandslideDashboard() {
             </div>
 
             {submitError && <p className="message message-error" role="alert">{submitError}</p>}
+            {predictionError && <p className="message message-error" role="alert">{predictionError}</p>}
             <p className="prediction-note">
-              The saved model predicts landslide status after saving. This is a learning-project estimate, not a confirmed observation or an official warning.
+              Saving sends this reading to the existing Django API, which returns its model prediction with the saved record. This is a learning-project estimate, not a confirmed observation or an official warning.
             </p>
 
             <button className="submit-button" type="submit" disabled={submitting}>
               {submitting
-                ? 'Saving…'
+                ? 'Saving & predicting…'
                 : editingId
-                  ? 'Update and predict'
-                  : 'Save and predict'}
+                  ? 'Update & Predict'
+                  : 'Save & Predict'}
               {!submitting && <span aria-hidden="true">→</span>}
             </button>
             {editingId && (
@@ -345,6 +373,62 @@ function LandslideDashboard() {
               </button>
             )}
           </form>
+          </section>
+        )}
+
+        {page === 'new' && predictionResult && (
+          <section
+            className={`panel prediction-result ${
+              predictionResult.landslide_prediction === 'Yes'
+                ? 'prediction-high'
+                : predictionResult.landslide_prediction === 'No'
+                  ? 'prediction-low'
+                  : ''
+            }`}
+            aria-labelledby="prediction-heading"
+            aria-live="polite"
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">MODEL RESULT · OBSERVATION #{predictionResult.id}</p>
+                <h2 id="prediction-heading">Landslide prediction</h2>
+              </div>
+              <span
+                className={`status-pill ${
+                  predictionResult.landslide_prediction === 'Yes'
+                    ? 'status-yes'
+                    : predictionResult.landslide_prediction === 'No'
+                      ? 'status-no'
+                      : 'status-unavailable'
+                }`}
+              >
+                {predictionResult.landslide_prediction ?? 'Unavailable'}
+              </span>
+            </div>
+            {predictionResult.landslide_probability == null ? (
+              <p className="prediction-note">Probability was not included in the API response.</p>
+            ) : (
+              <p className="prediction-probability">
+                Landslide probability
+                <strong>{(predictionResult.landslide_probability * 100).toFixed(1)}%</strong>
+              </p>
+            )}
+            <p className="prediction-note">
+              This estimate is not an official warning. Follow local authorities and
+              emergency services if you believe you are at risk.
+            </p>
+            <button
+              className="text-button result-safety-button"
+              type="button"
+              onClick={() => {
+                setSafetyQuestion(
+                  `What safety steps should I take for observation #${predictionResult.id} at location ${predictionResult.location_id} with a ${predictionResult.landslide_prediction === 'Yes' ? 'positive' : 'negative'} landslide prediction?`,
+                )
+                setPage('safety')
+              }}
+            >
+              Ask the safety guide about this result
+            </button>
           </section>
         )}
 

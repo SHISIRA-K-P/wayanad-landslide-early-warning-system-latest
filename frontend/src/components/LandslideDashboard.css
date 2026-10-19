@@ -246,6 +246,46 @@
   color: #286a49;
 }
 
+.prediction-result {
+  border-left: 4px solid #71847a;
+}
+
+.prediction-result.prediction-high {
+  border-left-color: #b8472e;
+}
+
+.prediction-result.prediction-low {
+  border-left-color: #26714a;
+}
+
+.prediction-result .panel-heading {
+  margin-bottom: 14px;
+}
+
+.prediction-probability {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  color: #536a5f;
+  font-size: 12px;
+}
+
+.prediction-probability strong {
+  color: #18312b;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-result .prediction-note {
+  margin-top: 11px;
+}
+
+.result-safety-button {
+  margin-top: 12px;
+}
+
 .prediction-note {
   margin: 16px 0 0;
   color: #74827c;
@@ -412,6 +452,11 @@ td strong {
   color: #26714a;
 }
 
+.status-unavailable {
+  background: #f1f3f2;
+  color: #65736b;
+}
+
 .table-state {
   display: grid;
   min-height: 165px;
@@ -521,6 +566,10 @@ td strong {
 
   .panel {
     padding: 18px 15px;
+  }
+
+  .prediction-probability strong {
+    font-size: 19px;
   }
 
   .form-grid {

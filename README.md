@@ -10,7 +10,7 @@ Build a system that receives landslide-related testing data, predicts risk with 
 
 ## Observation API (implemented)
 
-The React app has separate **New observation** and **All records** pages. Use **Edit** or **Delete** in the records table to manage an existing record. The API provides:
+The React app opens on the observation form. **Save & Predict** creates an observation and returns its model prediction and probability on that same page. Select **All records** to fetch and review previously saved observations; use **Edit** or **Delete** in the records table to manage an existing record. The API provides:
 
 | Method | Endpoint | Behavior |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ The **input** includes the measurements below; you do not enter a landslide outc
 
 `vegetation_cover` must be `Low`, `Medium`, or `High`. The API also validates a positive location ID, humidity from 0 to 100, non-negative wind speed/rainfall, and slope angle from 0 to 90 degrees. The returned probability is the model's estimate for the positive (`Yes`) class; it is not a calibrated real-world risk measurement.
 
-The React form sends the corresponding dataset column names (`Location_ID`, `Max_Temp_C`, `Humidity_Pct`, `Wind_Speed_kmh`, `Rainfall_mm`, `Slope_Angle_Deg`, and `Vegetation_Cover`). Django maps these to the API/database field names shown in the example. Do not send `Landslide`; the server predicts that value.
+The React form sends the corresponding dataset column names (`Location_ID`, `Max_Temp_C`, `Humidity_Pct`, `Wind_Speed_kmh`, `Rainfall_mm`, `Slope_Angle_Deg`, and `Vegetation_Cover`). Django maps these to the API/database field names shown in the example. Do not send `Landslide`; the server predicts that value. The prediction result links to the document-based safety assistant; the backend response agent's recommendations are not part of the observation API response.
 
 ## Landslide prediction follow-up
 
