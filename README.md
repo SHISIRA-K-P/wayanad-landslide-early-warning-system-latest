@@ -57,20 +57,131 @@ saved observation, RAG result, and backend lookup. The contact details are not
 sent to Ollama. When prediction is `No`, no agent tools run.
 
 Email delivery is **dry-run by default**. The agent returns an email preview
-and `email_status: "dry_run"` without contacting SMTP. To enable actual sending
-after verifying the SMTP configuration and contact, set
+and `email_result.status: "dry_run"` without contacting SMTP. To enable actual
+sending after verifying the SMTP configuration and contact, set
 `LANDSLIDE_EMAIL_DRY_RUN=false` in the project-root `.env` and restart Django.
-The final agent result reports `sent` only if Django's mail backend reports
-exactly one message sent; SMTP errors and unsuccessful send counts are reported
-as `failed`, while absent/invalid contact email is reported as skipped. No
-email, SMS, or public alert is sent for a `No` prediction.
+The process environment takes precedence over `.env`: `load_dotenv()` does not
+replace a value already present in the environment. If the server process has
+`LANDSLIDE_EMAIL_DRY_RUN=true`, it will remain in dry-run even when `.env` says
+`false`. Also, `.env.example` intentionally defaults to `true`; copying it over
+an existing `.env` resets the project to dry-run.
+The final agent result reports `success` only if Django's mail backend accepts
+exactly one message; SMTP errors and unsuccessful send counts are reported
+as `failed`, while absent/invalid contact email is reported as skipped. A
+`success` status means the SMTP backend accepted the message, not that it
+reached the recipient's inbox. No email, SMS, or public alert is sent for a
+`No` prediction.
 
-The agent prints its result in the Django server process, including the
-retrieved safety answer and source passages, contact details, and email status;
-results are not included in the public API response. Agent failures are logged
-by Django and do not undo the saved prediction. This process-local background
-execution is intended for this learning prototype; use a durable task queue
-for production deployments where tasks must survive server restarts.
+The email uses the recipient address returned by the `EmergencyAuthority`
+database lookup and validates it before sending. It includes a readable
+observation, RAG answer and source list (including page, score, and text),
+authority details, email operation status, and the complete workflow JSON.
+The JSON embedded in an actual email records the email status as `pending`
+because delivery cannot be confirmed until after that email has been sent; the
+final agent result reports `sent` or `failed` based on Django's mail backend.
+Dry-run previews include `dry_run` and its reason and do not contact SMTP.
+
+### Enable and test Gmail email (authorized test recipients only)
+
+The project-root `.env.example` contains Gmail's usual SMTP settings:
+`smtp.gmail.com`, port `587`, TLS enabled, and SSL disabled. The workspace
+loads settings from the ignored project-root `.env` file. Keep
+`LANDSLIDE_EMAIL_DRY_RUN=true` while setting up and reviewing the contact.
+This is the safe default; Django also uses dry-run if that variable is
+missing. `DEFAULT_FROM_EMAIL` falls back to `EMAIL_HOST_USER` if it is omitted.
+The example has placeholders only. Do not copy it over an existing `.env`;
+the template's dry-run default is `true`.
+
+1. Copy the example file and edit the private `.env` in the project root:
+
+   ```powershell
+   if (!(Test-Path .env)) { Copy-Item .env.example .env }
+   notepad .env
+   ```
+
+2. Set the SMTP values to the Gmail account you control. Do not put these
+   values in source code or share them:
+
+   ```dotenv
+   EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+   EMAIL_HOST=smtp.gmail.com
+   EMAIL_PORT=587
+   EMAIL_USE_TLS=true
+   EMAIL_USE_SSL=false
+   EMAIL_HOST_USER=your-sender@gmail.com
+   EMAIL_HOST_PASSWORD=your-google-app-password
+   DEFAULT_FROM_EMAIL=your-sender@gmail.com
+   LANDSLIDE_EMAIL_DRY_RUN=true
+   ```
+
+   Create a Google App Password in your Google Account's Security settings;
+   Google requires 2-Step Verification. Use the generated App Password, not
+   your normal Google password. Paste it as the value of
+   `EMAIL_HOST_PASSWORD` (omit spaces if Google displays them). The sender
+   address should be the Gmail account used for SMTP authentication. Django's
+   settings also remove whitespace from `EMAIL_HOST_PASSWORD` when the host is
+   `smtp.gmail.com`, so a grouped App Password in `.env` is normalized.
+   Never write credentials directly in a Python file. Keep the App Password
+   only in the ignored project-root `.env` file.
+
+3. Restart Django after editing `.env`. First test SMTP independently using
+   an inbox you own or are authorized to use. This direct Django shell test
+   deliberately sends one real test email and is independent of the agent's
+   dry-run flag:
+
+   ```powershell
+   $env:LANDSLIDE_EMAIL_DRY_RUN = "false"
+   python app\manage.py shell -c "from django.conf import settings; print('Dry-run:', settings.LANDSLIDE_EMAIL_DRY_RUN); print('Backend:', settings.EMAIL_BACKEND); print('Gmail host/port/TLS:', settings.EMAIL_HOST, settings.EMAIL_PORT, settings.EMAIL_USE_TLS); print('SMTP username/password configured:', bool(settings.EMAIL_HOST_USER), bool(settings.EMAIL_HOST_PASSWORD))"
+   python app\manage.py shell -c "from django.core.mail import send_mail; count = send_mail('Wayanad POC SMTP test', 'Authorized configuration test only; not an emergency alert.', None, ['YOUR_OWN_TEST_ADDRESS'], fail_silently=False); print(f'Mail backend accepted {count} message(s)')"
+   ```
+
+   Replace `YOUR_OWN_TEST_ADDRESS` with your own controlled test inbox. A
+   count of `1` means Django's SMTP backend accepted the message; it does not
+   guarantee that it reached the inbox. Authentication, TLS, timeout, and
+   other SMTP failures are shown in the command output. The first command
+   should print `Dry-run: False` and the SMTP backend; it never prints the
+   password. Set the environment variable in the same terminal before starting
+   the Django server too, then restart it so the running process reloads
+   settings.
+
+4. Only after the independent test works, prepare the database contact used
+   by `get_emergency_contact()` to point to a controlled test inbox you are
+   authorized to email. The current lookup selects the first authority by
+   name and ID, so verify which row it will return. Then explicitly change
+   this setting in your private `.env`:
+
+   ```dotenv
+   LANDSLIDE_EMAIL_DRY_RUN=false
+   ```
+
+   In the same PowerShell terminal that starts Django, run:
+
+   ```powershell
+   $env:LANDSLIDE_EMAIL_DRY_RUN = "false"
+   python app\manage.py runserver
+   ```
+
+   This clears a stale process-environment value that otherwise overrides
+   `.env`. Verify with the settings check above; it must print `Dry-run: False`.
+   Exercise the normal positive-prediction workflow using test data and
+   source-backed RAG guidance. The agent result is logged by the Django
+   process (the observation API remains asynchronous); check
+   `email_result.status` and `email_result.error`. `success` means the backend
+   accepted exactly one message. `failed` includes a specific SMTP
+   authentication or connection error, and is never reported as `success`
+   when submission fails. Restore
+   `LANDSLIDE_EMAIL_DRY_RUN=true` when finished.
+
+Do not use a real authority's contact for these tests without explicit
+authorization. This project is a learning prototype, not an official
+emergency-warning system.
+
+The agent prints its complete result as JSON in the Django server process;
+results are not included in the public observation API response, which remains
+asynchronous. Agent failures are logged by Django and do not undo the saved
+prediction. This process-local background execution is intended for this
+learning prototype; use a durable task queue for production deployments where
+tasks must survive server restarts.
 
 Install/start Ollama and fetch the configured model before using the agent:
 
@@ -111,6 +222,28 @@ python app\manage.py test observations.tests.LandslideResponseSelectionTests obs
 
 These tests mock the safety assistant and SMTP; email tests cover dry-run,
 successful delivery results, and send failures without sending real email.
+
+To run only the response email test module, run this from the project root
+(the folder containing `app` and `venv`):
+
+```powershell
+$env:DB_ENGINE = "sqlite"
+$env:DJANGO_SECRET_KEY = "test-only-key-do-not-use-in-production"
+.\venv\Scripts\python.exe app\manage.py test observations.tests
+```
+
+`test_response_email.py` is a separate manual SMTP check, not a Django
+`TestCase` module. From the project root, run it with an inbox you control:
+
+```powershell
+.\venv\Scripts\python.exe app\observations\test_response_email.py YOUR_OWN_TEST_ADDRESS --send
+```
+
+The script loads `config.settings` and the project-root `.env` itself. It will
+not send unless you provide both a recipient and the explicit `--send` flag.
+It submits one real test email; confirm the destination is authorized before
+running it. A success message means Django's SMTP backend accepted the message,
+not necessarily that it arrived in the inbox.
 
 ## Run the frontend and backend locally (Windows)
 

@@ -131,9 +131,9 @@ import smtplib
 from email.message import EmailMessage
 
 # Email configuration
-sender_email = "shisirahasvika@gmail.com"
-app_password = "pmvu btuz jcay yjkl"
-receiver_email = "shisirakrishna@gmail.com"
+sender_email = ""
+app_password = ""
+receiver_email = ""
 
 # Create email
 msg = EmailMessage()
