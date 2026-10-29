@@ -149,28 +149,44 @@ STATIC_URL = 'static/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-EMAIL_BACKEND = os.environ.get(
-    'EMAIL_BACKEND',
-    'django.core.mail.backends.smtp.EmailBackend',
-)
-EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
-EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() == 'true'
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
-LANDSLIDE_EMAIL_DRY_RUN = (
-    os.environ.get('LANDSLIDE_EMAIL_DRY_RUN', 'true').lower() == 'true'
-)
-LANDSLIDE_ALERT_TEST_MODE = (
-    os.environ.get('LANDSLIDE_ALERT_TEST_MODE', 'true').lower() == 'true'
-)
-LANDSLIDE_ALERT_TEST_RECIPIENT = os.environ.get(
-    'LANDSLIDE_ALERT_TEST_RECIPIENT',
-    '',
-)
+# EMAIL_BACKEND = os.environ.get(
+#     'EMAIL_BACKEND',
+#     'django.core.mail.backends.smtp.EmailBackend',
+# )
+# EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+# EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+# EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'shisirahasvik@gmail.com')
+# EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'pmvu btuz jcay yjkl')
+# if EMAIL_HOST.lower() == 'smtp.gmail.com':
+#     EMAIL_HOST_PASSWORD = ''.join(EMAIL_HOST_PASSWORD.split())
+# EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+# EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() == 'true'
+# EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
+# DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+# LANDSLIDE_EMAIL_DRY_RUN = (
+#     os.environ.get('LANDSLIDE_EMAIL_DRY_RUN', 'true').lower() == 'true'
+# )
+# LANDSLIDE_ALERT_TEST_MODE = (
+#     os.environ.get('LANDSLIDE_ALERT_TEST_MODE', 'true').lower() == 'true'
+# )
+# LANDSLIDE_ALERT_TEST_RECIPIENT = os.environ.get(
+#     'LANDSLIDE_ALERT_TEST_RECIPIENT',
+#     '',
+# )
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+
+EMAIL_HOST_USER = os.getenv("shisirahasvik@gmail.com")
+EMAIL_HOST_PASSWORD = os.getenv("pmvu btuz jcay yjkl")
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_TIMEOUT = 20
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()

@@ -54,14 +54,7 @@ def _run_response_agent(observation_id):
     print(
         'Landslide response agent result:\n'
         + json.dumps(
-            {
-                'observation_id': observation_id,
-                'status': result.get('status'),
-                'rag_retrieval': result.get('safety_result'),
-                'emergency_contact': result.get('emergency_contact'),
-                'email_status': result.get('email_result', {}).get('status'),
-                'reason': result.get('reason'),
-            },
+            result,
             ensure_ascii=False,
             indent=2,
             default=str,

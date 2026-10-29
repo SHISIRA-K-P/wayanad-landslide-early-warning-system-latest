@@ -54,6 +54,17 @@ class LandslideObservationApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data, [])
 
+    def test_cors_allows_local_react_development_origin(self):
+        response = self.client.get(
+            self.url,
+            HTTP_ORIGIN='http://localhost:5173',
+        )
+
+        self.assertEqual(
+            response['Access-Control-Allow-Origin'],
+            'http://localhost:5173',
+        )
+
     @patch(
         'observations.views.predict_landslide',
         return_value={
@@ -553,7 +564,7 @@ class LandslideResponseSelectionTests(TestCase):
         self.assertNotIn('send_emergency_email', result['agent_tools_called'])
 
     @patch('observations.response_agent.send_mail', return_value=1)
-    def test_send_emergency_email_reports_sent_only_after_mail_backend_success(
+    def test_send_emergency_email_reports_success_only_after_mail_backend_success(
         self,
         send_mail_mock,
     ):
@@ -572,7 +583,7 @@ class LandslideResponseSelectionTests(TestCase):
                 contact,
             )
 
-        self.assertEqual(result['status'], 'sent')
+        self.assertEqual(result['status'], 'success')
         send_mail_mock.assert_called_once()
         self.assertEqual(
             send_mail_mock.call_args.kwargs['recipient_list'],
@@ -587,7 +598,7 @@ class LandslideResponseSelectionTests(TestCase):
         'observations.response_agent.send_mail',
         side_effect=smtplib.SMTPException('SMTP unavailable'),
     )
-    def test_send_emergency_email_reports_failure_without_claiming_sent(
+    def test_send_emergency_email_reports_failure_without_claiming_success(
         self,
         send_mail_mock,
     ):
@@ -608,6 +619,59 @@ class LandslideResponseSelectionTests(TestCase):
 
         self.assertEqual(result['status'], 'failed')
         self.assertIn('SMTP unavailable', result['error'])
+
+    @patch(
+        'observations.response_agent.send_mail',
+        side_effect=smtplib.SMTPAuthenticationError(
+            535,
+            b'Authentication failed',
+        ),
+    )
+    def test_send_emergency_email_reports_authentication_failure_safely(
+        self,
+        send_mail_mock,
+    ):
+        contact = get_emergency_contact()
+
+        with override_settings(
+            LANDSLIDE_EMAIL_DRY_RUN=False,
+            DEFAULT_FROM_EMAIL='sender@example.invalid',
+        ):
+            result = send_emergency_email(
+                self.observation,
+                {'recommendation': 'Use caution.', 'source_documents': []},
+                contact,
+            )
+
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('Google App Password', result['error'])
+        self.assertNotIn('Authentication failed', result['error'])
+
+    @patch(
+        'observations.response_agent.send_mail',
+        side_effect=smtplib.SMTPServerDisconnected(
+            'Connection unexpectedly closed',
+        ),
+    )
+    def test_send_emergency_email_reports_smtp_disconnect_actionably(
+        self,
+        send_mail_mock,
+    ):
+        contact = get_emergency_contact()
+
+        with override_settings(
+            LANDSLIDE_EMAIL_DRY_RUN=False,
+            DEFAULT_FROM_EMAIL='sender@example.invalid',
+        ):
+            result = send_emergency_email(
+                self.observation,
+                {'recommendation': 'Use caution.', 'source_documents': []},
+                contact,
+            )
+
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('Connection unexpectedly closed', result['error'])
+        self.assertIn('same Gmail username and App Password', result['error'])
         send_mail_mock.assert_called_once()
 
     @patch(
