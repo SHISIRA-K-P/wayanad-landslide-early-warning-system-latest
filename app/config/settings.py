@@ -78,36 +78,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-
-# MySQL is the default; set DB_ENGINE=sqlite only for an explicit local fallback.
-DB_ENGINE = os.environ.get('DB_ENGINE', 'mysql').lower()
-
-if DB_ENGINE == 'mysql':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': os.environ.get('DB_NAME', 'landslide_db'),
-            'USER': os.environ.get('DB_USER', 'root'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'Manman@123'),
-            'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
-            'PORT': os.environ.get('DB_PORT', '3306'),
-            'OPTIONS': {'charset': 'utf8mb4'},
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.environ['DB_NAME'],
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ.get('DB_HOST', 'localhost'),  # Optional: host/port can keep defaults
+        'PORT': os.environ.get('DB_PORT', '3306')
+        
     }
-    if not DATABASES['default']['NAME'] or not DATABASES['default']['USER']:
-        raise ImproperlyConfigured(
-            'Set DB_NAME and DB_USER when DB_ENGINE=mysql.'
-        )
-elif DB_ENGINE == 'sqlite':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:
-    raise ImproperlyConfigured('DB_ENGINE must be either "sqlite" or "mysql".')
-
+}
+    
 
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
@@ -146,35 +128,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
-
-# EMAIL_BACKEND = os.environ.get(
-#     'EMAIL_BACKEND',
-#     'django.core.mail.backends.smtp.EmailBackend',
-# )
-# EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
-# EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
-# EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'shisirahasvik@gmail.com')
-# EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'pmvu btuz jcay yjkl')
-# if EMAIL_HOST.lower() == 'smtp.gmail.com':
-#     EMAIL_HOST_PASSWORD = ''.join(EMAIL_HOST_PASSWORD.split())
-# EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
-# EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() == 'true'
-# EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
-# DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
-# LANDSLIDE_EMAIL_DRY_RUN = (
-#     os.environ.get('LANDSLIDE_EMAIL_DRY_RUN', 'true').lower() == 'true'
-# )
-# LANDSLIDE_ALERT_TEST_MODE = (
-#     os.environ.get('LANDSLIDE_ALERT_TEST_MODE', 'true').lower() == 'true'
-# )
-# LANDSLIDE_ALERT_TEST_RECIPIENT = os.environ.get(
-#     'LANDSLIDE_ALERT_TEST_RECIPIENT',
-#     '',
-# )
-
-
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 EMAIL_HOST = "smtp.gmail.com"
@@ -182,8 +135,8 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
 
-EMAIL_HOST_USER = os.getenv("shisirahasvik@gmail.com")
-EMAIL_HOST_PASSWORD = os.getenv("pmvu btuz jcay yjkl")
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 EMAIL_TIMEOUT = 20

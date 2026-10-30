@@ -152,6 +152,16 @@ def get_emergency_contact():
 # TOOL 3: Prepare or send an emergency email
 # ---------------------------------------------------------
 
+
+# import json
+# import logging
+# from django.conf import settings
+# from django.core.mail import send_mail
+# from django.core.validators import validate_email
+# from django.core.exceptions import ValidationError
+
+# logger = logging.getLogger(__name__)
+
 def send_emergency_email(
     observation,
     safety_result,
@@ -159,17 +169,11 @@ def send_emergency_email(
     workflow_result=None,
 ):
     """
-    Prepare an email preview by default.
-    Send only if dry-run mode is explicitly disabled.
+    Sends an emergency warning email directly without dry-run or excessive checks.
     """
-
     recipient = (emergency_contact.get("email") or "").strip()
 
     if not recipient:
-        logger.warning(
-            "Email skipped for observation %s because the contact has no email.",
-            observation.pk,
-        )
         return {
             "status": "skipped",
             "reason": "The emergency contact has no email address.",
@@ -178,278 +182,107 @@ def send_emergency_email(
     try:
         validate_email(recipient)
     except ValidationError:
-        logger.warning(
-            "Email skipped for observation %s because the contact email is invalid.",
-            observation.pk,
-        )
         return {
             "status": "skipped",
             "reason": "The emergency contact email address is invalid.",
         }
 
-    # Safe default: do not send a real email during development.
-    dry_run = getattr(settings, "LANDSLIDE_EMAIL_DRY_RUN", True)
     sender = getattr(settings, "DEFAULT_FROM_EMAIL", "")
-    subject = (
-        f"Wayanad Landslide POC - Observation {observation.pk} - "
-        "Response Details"
-    )
+    subject = f"Wayanad Landslide POC - Observation {observation.pk} Response Details"
+
+    # Build the email payload
     email_payload = dict(workflow_result or {})
     if workflow_result is None:
-        email_payload.update(
-            {
-                "status": "completed",
-                "observation_id": observation.pk,
-                "observation": {
-                    "id": observation.pk,
-                    "location_id": getattr(observation, "location_id", None),
-                    "landslide_prediction": getattr(
-                        observation,
-                        "landslide_prediction",
-                        None,
-                    ),
-                    "landslide_probability": getattr(
-                        observation,
-                        "landslide_probability",
-                        None,
-                    ),
-                },
-                "safety_result": safety_result,
-                "emergency_contact": emergency_contact,
-            }
-        )
-    email_status = {
-        "status": "dry_run" if dry_run else "pending",
-        "recipient": recipient,
-        "subject": subject,
-    }
-    if dry_run:
-        email_status["reason"] = (
-            "Dry-run mode is enabled; no message was sent."
-        )
-    else:
-        email_status["reason"] = (
-            "Delivery status will be available after the mail backend responds."
-        )
-    email_payload["email_result"] = email_status
+        email_payload.update({
+            "status": "completed",
+            "observation_id": observation.pk,
+            "observation": {
+                "id": observation.pk,
+                "location_id": getattr(observation, "location_id", None),
+                "landslide_prediction": getattr(observation, "landslide_prediction", None),
+                "landslide_probability": getattr(observation, "landslide_probability", None),
+            },
+            "safety_result": safety_result,
+            "emergency_contact": emergency_contact,
+        })
 
     displayed_contact = email_payload.get("emergency_contact") or emergency_contact
     displayed_safety = email_payload.get("safety_result") or safety_result
 
-
-
     def display(value):
         return "Not available" if value is None or value == "" else str(value)
 
-    sources = (
-        displayed_safety.get("sources")
-        or displayed_safety.get("source_documents")
-        or []
-    )
-    sources_text = json.dumps(
-        sources,
-        ensure_ascii=False,
-        indent=2,
-        default=str,
-    )
-    safety_answer = (
-        displayed_safety.get("answer")
-        or displayed_safety.get("recommendation")
-    )
-    email_result = email_payload["email_result"]
-    email_reason = email_result.get("reason")
-    email_status_text = (
-        f"Status: {email_result.get('status', 'Not available')}\n"
-        f"Recipient: {display(recipient)}\n"
-        f"Reason: {display(email_reason)}"
-    )
+    sources = displayed_safety.get("sources") or displayed_safety.get("source_documents") or []
+    sources_text = json.dumps(sources, ensure_ascii=False, indent=2, default=str)
+    safety_answer = displayed_safety.get("answer") or displayed_safety.get("recommendation")
 
+    # message = (
+    #     "This message is generated by the Wayanad Landslide Early Warning "
+    #     "and Response System learning prototype. It is not an official "
+    #     "emergency warning.\n\n"
+    #     "OBSERVATION AND WORKFLOW\n"
+    #     f"Observation ID: {display(email_payload.get('observation_id', observation.pk))}\n"
+    #     f"Workflow status: {display(email_payload.get('status'))}\n\n"
+    #     "RAG SAFETY GUIDANCE\n"
+    #     f"Retrieval status: {display(displayed_safety.get('status'))}\n"
+    #     f"Answer: {display(safety_answer)}\n\n"
+    #     "RETRIEVED SOURCE REFERENCES\n"
+    #     f"{sources_text}\n\n"
+    #     "EMERGENCY AUTHORITY\n"
+    #     f"Name: {display(displayed_contact.get('authority_name'))}\n"
+    #     f"Authority type: {display(displayed_contact.get('authority_type'))}\n"
+    #     f"District: {display(displayed_contact.get('district'))}\n"
+    #     f"Email: {display(displayed_contact.get('email'))}\n"
+    #     f"Phone: {display(displayed_contact.get('phone_number'))}\n\n"
+    #     "COMPLETE WORKFLOW RESPONSE (JSON)\n"
+    #     f"{json.dumps(email_payload, ensure_ascii=False, indent=2, default=str)}\n"
+    # )
+    
     message = (
-        "This message is generated by the Wayanad Landslide Early Warning "
-        "and Response System learning prototype. It is not an official "
-        "emergency warning.\n\n"
-        "OBSERVATION AND WORKFLOW\n"
-        f"Observation ID: {display(email_payload.get('observation_id', observation.pk))}\n"
-        f"Workflow status: {display(email_payload.get('status'))}\n\n"
-        "RAG SAFETY GUIDANCE\n"
-        f"Retrieval status: {display(displayed_safety.get('status'))}\n"
-        f"Answer: {display(safety_answer)}\n\n"
-        "RETRIEVED SOURCE REFERENCES (all source fields)\n"
-        f"{sources_text}\n\n"
-        "EMERGENCY AUTHORITY\n"
-        f"Name: {display(displayed_contact.get('authority_name'))}\n"
-        f"Authority type: {display(displayed_contact.get('authority_type'))}\n"
-        f"District: {display(displayed_contact.get('district'))}\n"
-        f"Email: {display(displayed_contact.get('email'))}\n"
-        f"Phone: {display(displayed_contact.get('phone_number'))}\n\n"
-        "EMAIL OPERATION\n"
-        f"{email_status_text}\n\n"
-        "COMPLETE WORKFLOW RESPONSE (JSON)\n"
-        f"{json.dumps(email_payload, ensure_ascii=False, indent=2, default=str)}\n\n"
-        "IMPORTANT DISCLAIMER\n"
-        "The prediction and AI-generated content must be reviewed by "
-        "authorized personnel. Follow official instructions from disaster "
-        "management authorities.\n"
-    )
+    "Dear Recipient,\n\n"
 
-    if dry_run:
-        logger.info(
-            "Email dry-run for observation %s to %s",
-            observation.pk,
-            recipient,
-        )
-        return {
-            "status": "dry_run",
-            "recipient": recipient,
-            "subject": subject,
-            "message": message,
-        }
+    "LANDSLIDE SAFETY GUIDANCE - WAYANAD\n\n"
 
-    required_settings = {
-    "EMAIL_BACKEND": settings.EMAIL_BACKEND,
-    "EMAIL_HOST": settings.EMAIL_HOST,
-    "EMAIL_HOST_USER": settings.EMAIL_HOST_USER,
-    "EMAIL_HOST_PASSWORD": settings.EMAIL_HOST_PASSWORD,
-    "DEFAULT_FROM_EMAIL": settings.DEFAULT_FROM_EMAIL,
-}
-    missing_settings = [
-        name for name, value in required_settings.items() if not value
-    ]
-    if missing_settings:
-        error = (
-            "Email sending is enabled, but required settings are missing: "
-            + ", ".join(missing_settings)
-        )
-        logger.error(
-            "Email configuration is incomplete for observation %s: %s",
-            observation.pk,
-            ", ".join(missing_settings),
-        )
-        return {
-            "status": "failed",
-            "recipient": recipient,
-            "subject": subject,
-            "error": error,
-        }
+    "The following safety guidance has been retrieved "
+    "from the landslide safety knowledge base.\n\n"
 
-    if (
-        settings.EMAIL_BACKEND
-        != "django.core.mail.backends.smtp.EmailBackend"
-    ):
-        error = (
-            "Email sending is enabled, but EMAIL_BACKEND is not Django's "
-            "SMTP email backend."
-        )
-        logger.error(
-            "Email backend is not SMTP for observation %s",
-            observation.pk,
-        )
-        return {
-            "status": "failed",
-            "recipient": recipient,
-            "subject": subject,
-            "error": error,
-        }
+    "SAFETY GUIDANCE\n\n"
+    f"{display(safety_answer)}\n\n"
 
-    if settings.EMAIL_USE_TLS and settings.EMAIL_USE_SSL:
-        error = "EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled."
-        logger.error(
-            "Conflicting SMTP TLS/SSL settings for observation %s",
-            observation.pk,
-        )
-        return {
-            "status": "failed",
-            "recipient": recipient,
-            "subject": subject,
-            "error": error,
-        }
+    "Please read and follow the above safety guidance carefully. "
+    "For further assistance, contact the appropriate authorized "
+    "disaster management authorities.\n\n"
 
-    logger.info(
-        "SMTP configuration for observation %s: backend=%s host=%s port=%s "
-        "use_tls=%s use_ssl=%s username_configured=%s "
-        "password_configured=%s",
-        observation.pk,
-        settings.EMAIL_BACKEND,
-        settings.EMAIL_HOST,
-        settings.EMAIL_PORT,
-        settings.EMAIL_USE_TLS,
-        settings.EMAIL_USE_SSL,
-        bool(settings.EMAIL_HOST_USER),
-        bool(settings.EMAIL_HOST_PASSWORD),
-    )
+    "Regards,\n"
+    "Wayanad Landslide Early Warning and Response System\n\n"
+
+    "--------------------------------------------------\n"
+    "DISCLAIMER:\n"
+    "This message is generated by a learning prototype. "
+    "It is not an official emergency warning. "
+    "Please follow instructions issued by authorized "
+    "disaster management authorities.\n"
+)
 
     try:
-        sent_count = send_mail(
+        send_mail(
             subject=subject,
             message=message,
             from_email=sender,
             recipient_list=[recipient],
             fail_silently=False,
         )
-
-        if sent_count != 1:
-            logger.error(
-                "Email backend did not confirm delivery for observation %s "
-                "(sent count: %s).",
-                observation.pk,
-                sent_count,
-            )
-            return {
-                "status": "failed",
-                "recipient": recipient,
-                "subject": subject,
-                "error": (
-                    "Django did not confirm that the mail backend accepted "
-                    "exactly one email."
-                ),
-            }
-
         return {
             "status": "success",
             "recipient": recipient,
         }
-
-    except smtplib.SMTPAuthenticationError:
-        logger.exception(
-            "SMTP authentication failed for observation %s",
-            observation.pk,
-        )
-        return {
-            "status": "failed",
-            "recipient": recipient,
-            "subject": subject,
-            "error": (
-                "SMTP authentication was rejected. Verify EMAIL_HOST_USER "
-                "and replace EMAIL_HOST_PASSWORD with a valid Google App "
-                "Password, then restart Django."
-            ),
-        }
-
-    except smtplib.SMTPServerDisconnected as exc:
-        logger.exception(
-            "SMTP server disconnected while sending observation %s",
-            observation.pk,
-        )
-        return {
-            "status": "failed",
-            "recipient": recipient,
-            "subject": subject,
-            "error": (
-                "The SMTP server closed the connection before Django "
-                f"confirmed submission ({type(exc).__name__}: {exc}). "
-                "Check that Django uses the same Gmail username and App "
-                "Password as the successful standalone test, and that "
-                "network access to smtp.gmail.com:587 is allowed."
-            ),
-        }
-
-    except (smtplib.SMTPException, OSError, ImproperlyConfigured) as exc:
+    except Exception as exc:
         logger.exception("Email sending failed for observation %s", observation.pk)
         return {
             "status": "failed",
             "recipient": recipient,
             "subject": subject,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": str(exc),
         }
 
 
