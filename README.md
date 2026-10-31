@@ -191,6 +191,8 @@ The beginner walkthrough is [notebooks/rag.ipynb](./notebooks/rag.ipynb). It rea
 
 The response contains an `answer` and the retrieved `sources`, including each source page and passage. The first question downloads the `intfloat/e5-base-v2` embedding model if it is not already cached, creates a 768-dimension Pinecone index if needed, and adds the PDF passages to a document-specific namespace. Later questions reuse the existing vectors. Restart Django after changing the PDF, embedding, Pinecone, or Ollama configuration.
 
+Ollama's `qwen2.5:3b` model generates the RAG answer by default. The same configured model is also used by the CrewAI response agent to summarize the observation and retrieved safety guidance for the emergency email. Set `OLLAMA_MODEL` in the project-root `.env` to override it for both. The `intfloat/e5-base-v2` model is used only to embed questions and retrieve relevant passages; it does not generate answers or summaries. This clarification is documentation-only and does not change the database or its schema.
+
 ### One-time setup
 
 1. In the project root, create your local environment file from the example and add your Pinecone API key:
