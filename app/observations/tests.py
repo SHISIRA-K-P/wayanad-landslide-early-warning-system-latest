@@ -379,13 +379,15 @@ class LandslideResponseSelectionTests(TestCase):
                 'observations.response_agent.get_emergency_contact',
                 wraps=get_emergency_contact,
             ) as lookup,
-            patch('observations.response_agent.send_mail') as send_mail_mock,
-            override_settings(LANDSLIDE_EMAIL_DRY_RUN=True),
+            patch(
+                'observations.response_agent.send_mail',
+                return_value=1,
+            ) as send_mail_mock,
             redirect_stdout(output),
         ):
             result = run_landslide_response_agent(self.observation.pk)
         lookup.assert_called_once_with()
-        send_mail_mock.assert_not_called()
+        send_mail_mock.assert_called_once()
 
         printed = output.getvalue()
         self.assertIn('Landslide response agent result:', printed)
@@ -430,10 +432,11 @@ class LandslideResponseSelectionTests(TestCase):
                 'send_emergency_email',
             ],
         )
-        self.assertEqual(result['email_status'], 'dry_run')
-        self.assertEqual(result['recipient'], 'first@example.invalid')
-        self.assertIn('Observation ID:', result['email_preview']['message'])
-        self.assertIn('Use the cited safety guidance.', result['email_preview']['message'])
+        self.assertEqual(result['email_result']['status'], 'success')
+        self.assertEqual(
+            result['email_result']['recipient'],
+            'first@example.invalid',
+        )
 
     @patch('observations.response_agent.chat')
     @patch('observations.response_agent.ask_rag')
@@ -463,7 +466,7 @@ class LandslideResponseSelectionTests(TestCase):
                 'observations.response_agent.get_emergency_contact',
                 wraps=get_emergency_contact,
             ) as lookup,
-            override_settings(LANDSLIDE_EMAIL_DRY_RUN=True),
+            patch('observations.response_agent.send_mail', return_value=1),
         ):
             result = run_landslide_response_agent(self.observation.pk)
 
@@ -570,10 +573,7 @@ class LandslideResponseSelectionTests(TestCase):
     ):
         contact = get_emergency_contact()
 
-        with override_settings(
-            LANDSLIDE_EMAIL_DRY_RUN=False,
-            DEFAULT_FROM_EMAIL='sender@example.invalid',
-        ):
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
             result = send_emergency_email(
                 self.observation,
                 {
@@ -594,6 +594,24 @@ class LandslideResponseSelectionTests(TestCase):
             send_mail_mock.call_args.kwargs['message'],
         )
 
+    @patch('observations.response_agent.send_mail', return_value=0)
+    def test_send_emergency_email_reports_unsuccessful_send_count(
+        self,
+        send_mail_mock,
+    ):
+        contact = get_emergency_contact()
+
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
+            result = send_emergency_email(
+                self.observation,
+                {'recommendation': 'Use caution.', 'source_documents': []},
+                contact,
+            )
+
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('sent 0 messages', result['error'])
+        send_mail_mock.assert_called_once()
+
     @patch(
         'observations.response_agent.send_mail',
         side_effect=smtplib.SMTPException('SMTP unavailable'),
@@ -604,10 +622,7 @@ class LandslideResponseSelectionTests(TestCase):
     ):
         contact = get_emergency_contact()
 
-        with override_settings(
-            LANDSLIDE_EMAIL_DRY_RUN=False,
-            DEFAULT_FROM_EMAIL='sender@example.invalid',
-        ):
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
             result = send_emergency_email(
                 self.observation,
                 {
@@ -633,10 +648,7 @@ class LandslideResponseSelectionTests(TestCase):
     ):
         contact = get_emergency_contact()
 
-        with override_settings(
-            LANDSLIDE_EMAIL_DRY_RUN=False,
-            DEFAULT_FROM_EMAIL='sender@example.invalid',
-        ):
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
             result = send_emergency_email(
                 self.observation,
                 {'recommendation': 'Use caution.', 'source_documents': []},
@@ -659,10 +671,7 @@ class LandslideResponseSelectionTests(TestCase):
     ):
         contact = get_emergency_contact()
 
-        with override_settings(
-            LANDSLIDE_EMAIL_DRY_RUN=False,
-            DEFAULT_FROM_EMAIL='sender@example.invalid',
-        ):
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
             result = send_emergency_email(
                 self.observation,
                 {'recommendation': 'Use caution.', 'source_documents': []},
@@ -692,10 +701,7 @@ class LandslideResponseSelectionTests(TestCase):
         }
         self._configure_agent_tool_calls(chat_mock)
 
-        with override_settings(
-            LANDSLIDE_EMAIL_DRY_RUN=False,
-            DEFAULT_FROM_EMAIL='sender@example.invalid',
-        ):
+        with override_settings(DEFAULT_FROM_EMAIL='sender@example.invalid'):
             result = run_landslide_response_agent(self.observation.pk)
 
         self.assertEqual(result['email_status'], 'failed')

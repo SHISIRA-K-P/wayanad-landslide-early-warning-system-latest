@@ -1,5 +1,4 @@
 
-import json
 import logging
 import os
 import smtplib
@@ -37,25 +36,20 @@ class ResponseAgentError(Exception):
 
 def retrieve_safety_measures(observation):
     """
-    Retrieve landslide safety guidance from the existing RAG system.
-    """
+    Get landslide guidance and its sources from the existing RAG system.
 
+    An answer is considered usable only when the RAG system also returns
+    source references. This prevents unsourced text from being treated as
+    verified safety guidance.
+    """
     query = (
-        "Provide verified landslide safety precautions and response guidance "
-        "for an observation with the following details: "
-        f"Location: {getattr(observation, 'location_id', 'Unknown')}; "
-        f"Rainfall: {getattr(observation, 'rainfall_mm', 'Unknown')} mm; "
-        f"Humidity: {getattr(observation, 'humidity_pct', 'Unknown')}%; "
-        f"Wind speed: {getattr(observation, 'wind_speed_kmh', 'Unknown')} km/h; "
-        f"Slope angle: {getattr(observation, 'slope_angle_deg', 'Unknown')} degrees. "
-        "Use only the supplied safety-document context. "
-        "If relevant verified guidance is unavailable, say so explicitly."
+        "LANDSLIDE Before & During precautions "
     )
 
     try:
         result = ask_rag(query)
 
-        # Support common RAG return formats.
+        # The RAG helper may return text, a dictionary, or a tuple/list.
         if isinstance(result, str):
             answer = result
             sources = []
@@ -78,6 +72,7 @@ def retrieve_safety_measures(observation):
             answer = ""
             sources = []
 
+        # An empty answer means there is no guidance to share.
         if not answer or not str(answer).strip():
             return {
                 "status": "unavailable",
@@ -85,7 +80,7 @@ def retrieve_safety_measures(observation):
                 "sources": [],
             }
 
-        # Do not claim that guidance is verified if no source was returned.
+        # Never treat guidance as verified unless the RAG system cites sources.
         if not sources:
             return {
                 "status": "unverified",
@@ -119,9 +114,10 @@ def retrieve_safety_measures(observation):
 
 def get_emergency_contact():
     """
-    Get an emergency authority from the database.
-    """
+    Return the first emergency authority, or None if the table is empty.
 
+    Ordering by name and ID makes the selected contact predictable.
+    """
     try:
         authority = (
             EmergencyAuthority.objects
@@ -132,6 +128,8 @@ def get_emergency_contact():
         if authority is None:
             return None
 
+        # Return plain values so the rest of the workflow does not need
+        # to work directly with a Django model instance.
         return {
             "id": authority.id,
             "authority_name": authority.authority_name,
@@ -148,19 +146,10 @@ def get_emergency_contact():
         ) from exc
 
 
-# ---------------------------------------------------------
-# TOOL 3: Prepare or send an emergency email
-# ---------------------------------------------------------
+# ============================================================
+# EMAIL DELIVERY
+# ============================================================
 
-
-# import json
-# import logging
-# from django.conf import settings
-# from django.core.mail import send_mail
-# from django.core.validators import validate_email
-# from django.core.exceptions import ValidationError
-
-# logger = logging.getLogger(__name__)
 
 def send_emergency_email(
     observation,
@@ -169,10 +158,14 @@ def send_emergency_email(
     workflow_result=None,
 ):
     """
-    Sends an emergency warning email directly without dry-run or excessive checks.
+    Email source-backed safety guidance to the selected emergency contact.
+
+    Missing or invalid addresses are skipped. SMTP errors and unsuccessful
+    send counts are returned as failures rather than reported as success.
     """
     recipient = (emergency_contact.get("email") or "").strip()
 
+    # Check the address before asking Django's mail backend to send anything.
     if not recipient:
         return {
             "status": "skipped",
@@ -187,10 +180,12 @@ def send_emergency_email(
             "reason": "The emergency contact email address is invalid.",
         }
 
+    # Django's configured sender and SMTP settings control actual delivery.
     sender = getattr(settings, "DEFAULT_FROM_EMAIL", "")
     subject = f"Wayanad Landslide POC - Observation {observation.pk} Response Details"
 
-    # Build the email payload
+    # Use the full workflow data when available, or create a small fallback
+    # payload when this function is called on its own.
     email_payload = dict(workflow_result or {})
     if workflow_result is None:
         email_payload.update({
@@ -212,66 +207,44 @@ def send_emergency_email(
     def display(value):
         return "Not available" if value is None or value == "" else str(value)
 
-    sources = displayed_safety.get("sources") or displayed_safety.get("source_documents") or []
-    sources_text = json.dumps(sources, ensure_ascii=False, indent=2, default=str)
     safety_answer = displayed_safety.get("answer") or displayed_safety.get("recommendation")
 
-    # message = (
-    #     "This message is generated by the Wayanad Landslide Early Warning "
-    #     "and Response System learning prototype. It is not an official "
-    #     "emergency warning.\n\n"
-    #     "OBSERVATION AND WORKFLOW\n"
-    #     f"Observation ID: {display(email_payload.get('observation_id', observation.pk))}\n"
-    #     f"Workflow status: {display(email_payload.get('status'))}\n\n"
-    #     "RAG SAFETY GUIDANCE\n"
-    #     f"Retrieval status: {display(displayed_safety.get('status'))}\n"
-    #     f"Answer: {display(safety_answer)}\n\n"
-    #     "RETRIEVED SOURCE REFERENCES\n"
-    #     f"{sources_text}\n\n"
-    #     "EMERGENCY AUTHORITY\n"
-    #     f"Name: {display(displayed_contact.get('authority_name'))}\n"
-    #     f"Authority type: {display(displayed_contact.get('authority_type'))}\n"
-    #     f"District: {display(displayed_contact.get('district'))}\n"
-    #     f"Email: {display(displayed_contact.get('email'))}\n"
-    #     f"Phone: {display(displayed_contact.get('phone_number'))}\n\n"
-    #     "COMPLETE WORKFLOW RESPONSE (JSON)\n"
-    #     f"{json.dumps(email_payload, ensure_ascii=False, indent=2, default=str)}\n"
-    # )
-    
+    # Keep the email body focused on the safety guidance and its recipient.
     message = (
-    "Dear Recipient,\n\n"
-
-    "LANDSLIDE SAFETY GUIDANCE - WAYANAD\n\n"
-
-    "The following safety guidance has been retrieved "
-    "from the landslide safety knowledge base.\n\n"
-
-    "SAFETY GUIDANCE\n\n"
-    f"{display(safety_answer)}\n\n"
-
-    "Please read and follow the above safety guidance carefully. "
-    "For further assistance, contact the appropriate authorized "
-    "disaster management authorities.\n\n"
-
-    "Regards,\n"
-    "Wayanad Landslide Early Warning and Response System\n\n"
-
-    "--------------------------------------------------\n"
-    "DISCLAIMER:\n"
-    "This message is generated by a learning prototype. "
-    "It is not an official emergency warning. "
-    "Please follow instructions issued by authorized "
-    "disaster management authorities.\n"
-)
+        "Dear " + display(displayed_contact.get("authority_name")) + ",\n\n"
+        "LANDSLIDE SAFETY GUIDANCE - WAYANAD\n\n"
+        "The following safety guidance has been retrieved "
+        "from the landslide safety knowledge base.\n\n"
+        "SAFETY GUIDANCE\n\n"
+        f"{display(safety_answer)}\n\n"
+        "Please read and follow the above safety guidance carefully. "
+        "For further assistance, contact the appropriate authorized "
+        "disaster management authorities.\n\n"
+        "Regards,\n"
+        "Wayanad Landslide Early Warning and Response System\n\n"
+    )
 
     try:
-        send_mail(
+        sent_count = send_mail(
             subject=subject,
             message=message,
             from_email=sender,
             recipient_list=[recipient],
             fail_silently=False,
         )
+        # Django returns the number of messages accepted by the backend.
+        if sent_count != 1:
+            logger.error(
+                "Email backend sent %s messages for observation %s.",
+                sent_count,
+                observation.pk,
+            )
+            return {
+                "status": "failed",
+                "recipient": recipient,
+                "subject": subject,
+                "error": f"Email backend sent {sent_count} messages; expected 1.",
+            }
         return {
             "status": "success",
             "recipient": recipient,
@@ -292,15 +265,18 @@ def send_emergency_email(
 
 def create_response_agent():
     """
-    Create the CrewAI agent for summarizing the response.
-    """
+    Create a CrewAI assistant to summarize the workflow results.
 
+    This agent only writes a summary; the Python code performs safety lookup,
+    contact lookup, and email delivery.
+    """
     model_name = os.getenv("OLLAMA_MODEL", OLLAMA_MODEL)
     base_url = os.getenv(
         "OLLAMA_BASE_URL",
         "http://localhost:11434",
     )
 
+    # CrewAI connects to the configured local Ollama model.
     llm = LLM(
         model=f"ollama/{model_name}",
         base_url=base_url,
@@ -331,12 +307,12 @@ def create_response_agent():
 
 def run_landslide_response_agent(observation_id):
     """
-    Run the three required operations in a predictable order.
-    CrewAI then summarizes the results.
+    Handle one positive landslide prediction in a fixed order.
 
-    Email sending remains controlled by Django settings.
+    The steps are: load the saved observation, retrieve sourced guidance,
+    find a contact, summarize with CrewAI, and send the email. CrewAI does
+    not decide whether these required Python steps happen.
     """
-
     try:
         observation = LandslideObservation.objects.get(
             pk=observation_id
@@ -346,7 +322,7 @@ def run_landslide_response_agent(observation_id):
             f"Observation {observation_id} was not found."
         ) from exc
 
-    # Do not initiate the response workflow for a negative prediction.
+    # Only a positive prediction starts the emergency response workflow.
     prediction = getattr(observation, "landslide_prediction", None)
 
     if prediction != "Yes":
@@ -363,15 +339,15 @@ def run_landslide_response_agent(observation_id):
 
     tools_called = []
 
-    # STEP 1: Call the Python function directly.
-    # This does not depend on the LLM choosing a tool.
+    # Step 1: Retrieve guidance directly, without relying on the language model.
     safety_result = retrieve_safety_measures(observation)
     tools_called.append("retrieve_safety_measures")
 
-    # STEP 2: Look up the contact directly.
+    # Step 2: Find the emergency authority that will receive the email.
     emergency_contact = get_emergency_contact()
     tools_called.append("get_emergency_contact")
 
+    # There is no recipient to email if the authority table has no contact.
     if emergency_contact is None:
         return {
             "status": "contact_not_found",
@@ -384,8 +360,7 @@ def run_landslide_response_agent(observation_id):
             "agent_tools_called": tools_called,
         }
 
-    # STEP 3: Do not prepare/send an alert email when there is no
-    # source-backed guidance. Require human review in that case.
+    # Require human review if the guidance is missing or has no sources.
     if safety_result.get("status") != "success":
         return {
             "status": "needs_human_review",
@@ -400,8 +375,7 @@ def run_landslide_response_agent(observation_id):
             "agent_tools_called": tools_called,
         }
 
-    # CrewAI summarizes the results; it does not control the
-    # mandatory database, RAG, or email operations.
+    # CrewAI provides a summary for the result; it does not run the workflow.
     try:
         agent = create_response_agent()
 
@@ -425,6 +399,7 @@ def run_landslide_response_agent(observation_id):
             agent=agent,
         )
 
+        # Run this single summary task in order, without delegation.
         crew = Crew(
             agents=[agent],
             tasks=[task],
@@ -435,14 +410,14 @@ def run_landslide_response_agent(observation_id):
         summary = str(crew.kickoff())
 
     except Exception as exc:
-        # A summarization failure must not hide the results of the
-        # operations already performed.
+        # A summary failure should not hide the guidance or stop email delivery.
         logger.exception("CrewAI summary generation failed")
         summary = (
             "CrewAI could not generate a summary. "
             f"Error: {exc}"
         )
 
+    # Collect the observation fields used in the final workflow result.
     observation_result = {
         "id": observation.pk,
         "location_id": observation.location_id,
@@ -469,8 +444,7 @@ def run_landslide_response_agent(observation_id):
         "agent_tools_called": [*tools_called, "send_emergency_email"],
     }
 
-    # Email delivery is the third required operation and receives the entire
-    # workflow payload. Its final status is only known after send_mail returns.
+    # Step 3: Send the message after safety guidance and contact are confirmed.
     email_result = send_emergency_email(
         observation=observation,
         safety_result=safety_result,

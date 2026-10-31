@@ -1,7 +1,14 @@
-from rest_framework import serializers
+# ============================================================
+# IMPORTS
+# ============================================================
 
+from rest_framework import serializers
 from .models import LandslideObservation
 
+
+# ============================================================
+# REQUEST SERIALIZERS
+# ============================================================
 
 class SafetyQuestionSerializer(serializers.Serializer):
     question = serializers.CharField(
@@ -10,6 +17,10 @@ class SafetyQuestionSerializer(serializers.Serializer):
         trim_whitespace=True,
     )
 
+
+# ============================================================
+# OBSERVATION SERIALIZATION
+# ============================================================
 
 class LandslideObservationSerializer(serializers.ModelSerializer):
     DATASET_FIELD_NAMES = {

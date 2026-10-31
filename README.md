@@ -38,6 +38,14 @@ The **input** includes the measurements below; you do not enter a landslide outc
 
 The React form sends the corresponding dataset column names (`Location_ID`, `Max_Temp_C`, `Humidity_Pct`, `Wind_Speed_kmh`, `Rainfall_mm`, `Slope_Angle_Deg`, and `Vegetation_Cover`). Django maps these to the API/database field names shown in the example. Do not send `Landslide`; the server predicts that value. The prediction result links to the document-based safety assistant; the backend response agent's recommendations are not part of the observation API response.
 
+Observation and safety-assistant HTTP routes are declared in
+`app/observations/urls.py`. Request validation and HTTP responses live in
+`views.py`; `services.py` coordinates prediction, database writes, and
+background response-agent scheduling. Model prediction stays in
+`prediction.py`, while runtime retrieval and agent/email behavior remain in
+`rag.py` and `response_agent.py`. The notebook remains responsible for creating
+and indexing the Pinecone safety-document vectors.
+
 ## Landslide prediction follow-up
 
 When a saved or updated observation is predicted as `Yes`, Django starts
@@ -56,14 +64,14 @@ model-supplied tool arguments; email content and recipient are built from the
 saved observation, RAG result, and backend lookup. The contact details are not
 sent to Ollama. When prediction is `No`, no agent tools run.
 
-Email delivery is **dry-run by default**. The agent returns an email preview
-and `email_status: "dry_run"` without contacting SMTP. To enable actual sending
-after verifying the SMTP configuration and contact, set
-`LANDSLIDE_EMAIL_DRY_RUN=false` in the project-root `.env` and restart Django.
-The final agent result reports `sent` only if Django's mail backend reports
-exactly one message sent; SMTP errors and unsuccessful send counts are reported
-as `failed`, while absent/invalid contact email is reported as skipped. No
-email, SMS, or public alert is sent for a `No` prediction.
+Email is sent through the configured SMTP backend when the observation is
+predicted as `Yes` and the selected emergency contact has a valid email address.
+Configure `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` in the project-root
+`.env`, then restart Django. The final agent result reports success only if
+Django's mail backend reports exactly one message sent; SMTP errors and
+unsuccessful send counts are reported as failed, while absent/invalid contact
+email is reported as skipped. No email, SMS, or public alert is sent for a
+`No` prediction.
 
 The agent prints its result in the Django server process, including the
 retrieved safety answer and source passages, contact details, and email status;
@@ -109,8 +117,8 @@ $env:DJANGO_SECRET_KEY = "test-only-key-do-not-use-in-production"
 python app\manage.py test observations.tests.LandslideResponseSelectionTests observations.tests.LandslideObservationApiTests observations.tests.LandslidePredictionTests
 ```
 
-These tests mock the safety assistant and SMTP; email tests cover dry-run,
-successful delivery results, and send failures without sending real email.
+These tests mock the safety assistant and SMTP; email tests cover successful
+delivery results and send failures without sending real email.
 
 ## Run the frontend and backend locally (Windows)
 
